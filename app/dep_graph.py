@@ -43,16 +43,26 @@ class DependencyGraph:
         color_map = {
             "pending": "gray",
             "in-progress": "orange",
-            "done": "green"
+            "done": "green",
+            "eligible": "#FFC107"  # amber color
         }
+
+        eligible_nodes = set(self.get_eligible_nodes())
 
         for node in self.graph.nodes:
             status = self.statuses.get(node, "pending")
+            color = color_map.get(status, "gray")
+            if status == "pending" and node in eligible_nodes:
+                color = color_map["eligible"]
+                title = f"{node} - eligible (no pending dependencies)"
+            else:
+                title = f"{node} - {status}"
+
             net.add_node(
                 node,
                 label=node,
-                color=color_map.get(status, "gray"),
-                title=f"{node} - {status}"
+                color=color,
+                title=title
             )
 
         for edge in self.graph.edges:
@@ -122,7 +132,6 @@ if __name__ == "__main__":
     # Mark initial completed nodes
     dg.mark_done("auth_repo.py")
     dg.mark_done("db_connector.py")
-    dg.mark_done("payment_repo.py")
 
     print("Eligible nodes:", dg.get_eligible_nodes())
     print("Bottom-up order:", dg.traverse_bottom_up())
