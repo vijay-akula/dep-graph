@@ -1,0 +1,19 @@
+{
+  "name": "dep-graph-frontend",
+  "version": "1.0.0",
+  "description": "Dependency graph UI using Cytoscape.js",
+  "scripts": {
+    "start": "parcel src/index.html --open",
+    "build": "parcel build src/index.html"
+  },
+  "dependencies": {
+    "cytoscape": "^3.26.0",
+    "cytoscape-dagre": "^2.5.0"
+  },
+  "devDependencies": {
+    "parcel": "^2.9.3"
+  },
+  "browserslist": [
+    "last 2 Chrome versions"
+  ]
+}

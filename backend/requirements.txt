@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+networkx
+python-multipart
+pydantic
+sqlalchemy
+aiosqlite
