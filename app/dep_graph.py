@@ -1,12 +1,15 @@
 from pyvis.network import Network
 import networkx as nx
 import json
+import os
 
 class DependencyGraph:
-    def __init__(self, dependencies):
+    def __init__(self, dependencies, state_file="dep_graph_state.json"):
         self.graph = nx.DiGraph()
         self.dependencies = dependencies
+        self.state_file = state_file
         self.statuses = {}  # node -> 'pending' | 'in-progress' | 'done'
+        self.load_state()  # Load previous state if available
         self.build_graph()
 
     def build_graph(self):
@@ -23,6 +26,7 @@ class DependencyGraph:
     def mark_done(self, node):
         if node in self.statuses:
             self.statuses[node] = "done"
+            self.save_state()  # Save state after marking a node as done
 
     def get_eligible_nodes(self):
         eligible = []
@@ -68,25 +72,24 @@ class DependencyGraph:
         for edge in self.graph.edges:
             net.add_edge(edge[0], edge[1], arrows="to")
 
+        # Enable save and load buttons in HTML
         net.set_options("""
         {
           "layout": {
             "hierarchical": {
               "enabled": true,
               "direction": "UD",
-              "sortMethod": "directed"
-            }
+              "sortMethod": "directed",
+              "nodeSpacing": 200,
+              "treeSpacing": 300,
+              "blockShifting": true,
+              "edgeMinimization": true,
+              "parentCentralization": true
+            },
+            "improvedLayout": true
           },
           "physics": {
-            "enabled": true,
-            "hierarchicalRepulsion": {
-              "centralGravity": 0.0,
-              "springLength": 80,
-              "springConstant": 0.01,
-              "nodeDistance": 100,
-              "damping": 0.09
-            },
-            "solver": "hierarchicalRepulsion"
+            "enabled": false
           },
           "interaction": {
             "navigationButtons": true,
@@ -115,6 +118,17 @@ class DependencyGraph:
 
         net.write_html(output_html)
 
+    def save_state(self):
+        """Save the current node statuses to a JSON file."""
+        with open(self.state_file, "w") as f:
+            json.dump(self.statuses, f, indent=4)
+
+    def load_state(self):
+        """Load the node statuses from the state file, if it exists."""
+        if os.path.exists(self.state_file):
+            with open(self.state_file, "r") as f:
+                self.statuses = json.load(f)
+
 if __name__ == "__main__":
     dependencies = {
         "auth_service.py": ["auth_repo.py", "db_connector.py"],
@@ -122,8 +136,8 @@ if __name__ == "__main__":
         "order_service.py": ["order_repo.py", "payment_service.py", "auth_service.py"],
         "main.py": ["order_service.py"],
         "auth_repo.py": [],
-        "payment_repo.py": [],
-        "order_repo.py": [],
+        "payment_repo.py": ["db_connector.py"],
+        "order_repo.py": ["db_connector.py"],
         "db_connector.py": []
     }
 
@@ -136,4 +150,10 @@ if __name__ == "__main__":
     print("Eligible nodes:", dg.get_eligible_nodes())
     print("Bottom-up order:", dg.traverse_bottom_up())
 
+    # Show graph with the current state
     dg.show_graph("intellij_like_dependency_graph.html")
+
+    # You can also manually save/load states if needed
+    # dg.save_state()  # Manually save
+    # dg.load_state()  # Manually load if needed
+
