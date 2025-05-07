@@ -3,7 +3,7 @@ import dagre from 'cytoscape-dagre';
 
 cytoscape.use(dagre);
 
-const API_URL = 'http://localhost:8000/api/graph';
+const API_URL = 'http://localhost:5000/api/graph';
 
 fetch(API_URL)
   .then(res => res.json())
@@ -89,5 +89,41 @@ function renderGraph(data) {
       edgeSep: 10,
       rankSep: 100
     }
+  });
+
+  // Adding a click event listener to nodes for status updates
+  cy.on('tap', 'node', function(event) {
+    const node = event.target;
+    const currentStatus = node.data('status');
+    const newStatus = currentStatus === 'done' ? 'pending' : 'done'; // toggle status for example
+    node.data('status', newStatus);
+
+    // Update the UI (change color, etc.)
+    node.style({
+      'background-color': newStatus === 'done' ? '#4caf50' : '#9e9e9e'
+    });
+console.log(node);
+    // Optionally, call an API to save the updated status
+    updateNodeStatusInAPI(node.id(), newStatus);
+    console.log(typeof node.id); // Is it a function or string?
+console.log(node.id);
+  });
+}
+
+// Function to update node status in your backend API
+function updateNodeStatusInAPI(nodeId, newStatus) {
+  fetch(`http://localhost:5000/api/graph/node/${nodeId}/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ status: newStatus }),
+  })
+  .then(res => res.json())
+  .then(data => {
+    console.log('Node status updated:', data);
+  })
+  .catch(err => {
+    console.error('Error updating node status:', err);
   });
 }

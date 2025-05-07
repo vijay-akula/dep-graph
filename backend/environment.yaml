@@ -1,0 +1,12 @@
+name: dep-graph-backend
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  - python=3.9.12
+  - flask
+  - sqlite
+  - pip
+  - pip:
+      - flask-cors
