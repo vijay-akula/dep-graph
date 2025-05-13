@@ -1,110 +1,106 @@
+// GraphViewer.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 
 cytoscape.use(dagre);
 
+const API_URL = 'http://localhost:5000/api/graph';
+
+const thStyle = {
+  textAlign: 'left',
+  padding: '8px',
+  backgroundColor: '#f0f0f0',
+  borderBottom: '2px solid #999'
+};
+
+const tdStyle = {
+  padding: '8px'
+};
+
 const GraphViewer = () => {
   const cyRef = useRef(null);
-  const [layoutDir, setLayoutDir] = useState('TB');
-  const [statusCounts, setStatusCounts] = useState({ done: 0, 'in-progress': 0, pending: 0 });
   const [selectedNode, setSelectedNode] = useState(null);
-  const [viewMode, setViewMode] = useState(null); // "view" or "edit"
+  const [layoutDirection, setLayoutDirection] = useState('TB');
+  const [versionActionView, setVersionActionView] = useState(null);
+  const [promptInput, setPromptInput] = useState('');
+  const [graphData, setGraphData] = useState(null);
 
   useEffect(() => {
-    loadGraph();
-  }, [layoutDir]);
-
-  const loadGraph = () => {
-    fetch('http://localhost:5000/api/graph')
+    fetch(API_URL)
       .then(res => res.json())
       .then(data => {
-        const enriched = enrichNodeStatuses(data);
-        updateStatusCounts(enriched.nodes);
+        const enriched = enrichNodeStatus(data);
+        setGraphData(enriched);
         renderGraph(enriched);
       })
-      .catch(err => console.error('Failed to load graph:', err));
-  };
+      .catch(err => {
+        console.error('Failed to load graph data:', err);
+      });
+  }, [layoutDirection]);
 
-  const updateStatusCounts = (nodes) => {
-    const counts = { done: 0, 'in-progress': 0, pending: 0 };
-    nodes.forEach(n => {
-      counts[n.status] += 1;
-    });
-    setStatusCounts(counts);
-  };
-
-  const enrichNodeStatuses = (data) => {
+  function enrichNodeStatus(data) {
     const doneNodes = new Set(data.nodes.filter(n => n.status === 'done').map(n => n.id));
     const dependencies = new Map();
 
     for (const link of data.links) {
-      if (!dependencies.has(link.target)) dependencies.set(link.target, []);
+      if (!dependencies.has(link.target)) {
+        dependencies.set(link.target, []);
+      }
       dependencies.get(link.target).push(link.source);
     }
 
     const updatedNodes = data.nodes.map(node => {
       if (node.status === 'done') return node;
       const deps = dependencies.get(node.id) || [];
-      const allDepsDone = deps.every(dep => doneNodes.has(dep));
-
-      if (deps.length === 0 || allDepsDone) {
-        return { ...node, status: node.eligible ? 'in-progress' : 'pending' };
-      } else {
-        return { ...node, status: 'pending' };
+      if (deps.length === 0 || deps.every(dep => doneNodes.has(dep))) {
+        return { ...node, status: 'in-progress' };
       }
+      return { ...node, status: 'pending' };
     });
 
     return { ...data, nodes: updatedNodes };
-  };
+  }
 
-  const renderGraph = (data) => {
-    if (cyRef.current) {
-      cyRef.current.destroy();
-    }
+  function renderGraph(data) {
+    const nodes = data.nodes.map(node => ({
+      data: { id: node.id, status: node.status }
+    }));
 
-    const elements = [
-      ...data.nodes.map(n => ({
-        data: { id: n.id, label: n.id, status: n.status, eligible: n.eligible }
-      })),
-      ...data.links.map(l => ({
-        data: { source: l.source, target: l.target }
-      }))
-    ];
+    const edges = data.links.map(link => ({
+      data: { source: link.source, target: link.target }
+    }));
 
     const cy = cytoscape({
-      container: document.getElementById('cy'),
-      elements,
+      container: cyRef.current,
+      elements: [...nodes, ...edges],
       style: [
         {
           selector: 'node',
           style: {
-            label: 'data(label)',
+            'label': 'data(id)',
             'text-valign': 'center',
-            'text-halign': 'center',
-            'color': ele => ele.data('status') === 'in-progress' ? '#000' : '#fff',
+            'color': '#fff',
+            'text-outline-color': '#333',
+            'text-outline-width': 2,
             'background-color': ele => {
-              const s = ele.data('status');
-              if (s === 'done') return '#4caf50';
-              if (s === 'in-progress') return '#ffeb3b';
+              const status = ele.data('status');
+              if (status === 'done') return '#4caf50';
+              if (status === 'in-progress') return '#ffeb3b';
               return '#9e9e9e';
             },
-            'text-outline-color': '#222',
-            'text-outline-width': 1,
-            'width': 140,
-            'height': 50,
             'shape': 'roundrectangle',
-            'font-size': '14px',
-            'font-weight': 'bold',
-            'cursor': 'pointer'
+            'width': 150,
+            'height': 50,
+            'font-size': '12px'
           }
         },
         {
           selector: 'edge',
           style: {
-            width: 3,
-            'line-color': '#999',
-            'target-arrow-color': '#999',
+            'width': 2,
+            'line-color': '#ccc',
+            'target-arrow-color': '#ccc',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier'
           }
@@ -112,120 +108,99 @@ const GraphViewer = () => {
       ],
       layout: {
         name: 'dagre',
-        rankDir: layoutDir,
-        nodeSep: 70,
-        edgeSep: 20,
+        rankDir: layoutDirection,
+        nodeSep: 50,
+        edgeSep: 10,
         rankSep: 100
       }
     });
 
-    cy.on('tap', 'node', (evt) => {
-      const node = evt.target;
-      const status = node.data('status');
-      const eligible = node.data('eligible');
-
-      if (status === 'in-progress' && eligible) {
-        node.data('status', 'done');
-        node.style('background-color', '#4caf50');
-        node.style('color', '#fff');
-
-        fetch(`http://localhost:5000/api/graph/node/${node.data('id')}/status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'done' })
-        })
-          .then(res => res.json())
-          .then(() => loadGraph())
-          .catch(err => console.error('Failed to update status:', err));
-      }
-
-      setSelectedNode(node.data());
-      setViewMode(null); // reset previous selection
+    cy.on('tap', 'node', function (event) {
+      const node = event.target;
+      setSelectedNode(node.id());
+      setVersionActionView(null);
     });
+  }
 
-    cyRef.current = cy;
+  const handleVersionAction = (action, version) => {
+    if (action === 'view') {
+      setVersionActionView('view');
+    }
+  };
+
+  const handleRefreshGraph = () => {
+    if (graphData) {
+      const enriched = enrichNodeStatus(graphData);
+      setGraphData(enriched);
+      renderGraph(enriched);
+    }
   };
 
   return (
     <div>
-      <h2>Task Graph Viewer</h2>
-
-      {/* Layout Selector */}
       <div style={{ marginBottom: '1rem' }}>
-        <label>
-          Layout Direction:&nbsp;
-          <select value={layoutDir} onChange={e => setLayoutDir(e.target.value)}>
-            <option value="TB">Top to Bottom</option>
-            <option value="BT">Bottom to Top</option>
-            <option value="LR">Left to Right</option>
-          </select>
-        </label>
+        <label>Layout Direction: </label>
+        <select value={layoutDirection} onChange={e => setLayoutDirection(e.target.value)}>
+          <option value="TB">Top to Bottom</option>
+          <option value="BT">Bottom to Top</option>
+          <option value="LR">Left to Right</option>
+        </select>
+        <button onClick={handleRefreshGraph} style={{ marginLeft: '1rem' }}>Refresh Graph</button>
       </div>
+      <div ref={cyRef} style={{ width: '100%', height: '500px', border: '1px solid #ccc' }}></div>
 
-      {/* Status Counts */}
-      <div style={{ marginBottom: '1rem' }}>
-        <strong>Status Counts:</strong> ✅ Done: {statusCounts.done} | ⚠️ In Progress: {statusCounts['in-progress']} | ⏳ Pending: {statusCounts.pending}
-      </div>
-
-      {/* Graph Area */}
-      <div id="cy" style={{ width: '100%', height: '600px', border: '1px solid #ccc', borderRadius: '8px' }} />
-
-      {/* View/Edit Panel */}
       {selectedNode && (
-        <div style={{ marginTop: '2rem', padding: '1rem', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: '#f9f9f9' }}>
-          <h3>Node: {selectedNode.id}</h3>
-          <button onClick={() => setViewMode('view')} style={{ marginRight: '10px' }}>View</button>
-          <button onClick={() => setViewMode('edit')}>Edit</button>
+        <div style={{ marginTop: '1rem' }}>
+          <h3>Node: {selectedNode}</h3>
 
-          {viewMode === 'view' && (
-            <div style={{ marginTop: '1rem' }}>
-              <h4>Viewing Details</h4>
-              <p>Status: {selectedNode.status}</p>
-              <p>Eligible: {selectedNode.eligible ? 'Yes' : 'No'}</p>
-            </div>
-          )}
+          <div style={{ marginTop: '1rem' }}>
+            <h4>Versions</h4>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Version</th>
+                  <th style={thStyle}>Created At</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[{ version: 'v1.0', created: '2024-01-01', status: 'draft' }, { version: 'v1.1', created: '2024-02-15', status: 'review' }, { version: 'v2.0', created: '2024-03-10', status: 'approved' }].map((ver, index) => (
+                  <tr key={index} style={{ borderBottom: '1px solid #ccc' }}>
+                    <td style={tdStyle}>{ver.version}</td>
+                    <td style={tdStyle}>{ver.created}</td>
+                    <td style={tdStyle}>{ver.status}</td>
+                    <td style={tdStyle}>
+                      <button onClick={() => handleVersionAction('view', ver)}>View</button>
+                      <button style={{ marginLeft: '8px' }}>Edit</button>
+                      <button style={{ marginLeft: '8px' }}>Accept</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-          {viewMode === 'edit' && (
+          {versionActionView === 'view' && (
             <div style={{ marginTop: '1rem' }}>
-              <h4>Edit Node (mock form)</h4>
-              <label>
-                Status:
-                <select defaultValue={selectedNode.status}>
-                  <option value="done">Done</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </label>
-              <br />
-              <label>
-                Eligible:
-                <input type="checkbox" defaultChecked={selectedNode.eligible} />
-              </label>
-              <br />
-              <button style={{ marginTop: '1rem' }}>Save (Not wired yet)</button>
+              <h4>Version Details</h4>
+              <input
+                placeholder="Enter prompt"
+                value={promptInput}
+                onChange={e => setPromptInput(e.target.value)}
+                style={{ width: '100%', padding: '8px', marginBottom: '0.5rem' }}
+              />
+              <div>
+                <button>View Code</button>
+                <button style={{ marginLeft: '8px' }}>Generate Tech Spec</button>
+                <button style={{ marginLeft: '8px' }}>Generate Flow Chart</button>
+              </div>
             </div>
           )}
         </div>
       )}
-
-      {/* Legend */}
-      <div style={{ marginTop: '2rem' }}>
-        <strong>Legend:</strong>
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-          <LegendItem color="#4caf50" label="Done ✅" />
-          <LegendItem color="#ffeb3b" label="In Progress ⚠️" />
-          <LegendItem color="#9e9e9e" label="Pending ⏳" />
-        </div>
-      </div>
     </div>
   );
 };
-
-const LegendItem = ({ color, label }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-    <div style={{ width: 20, height: 20, backgroundColor: color, border: '1px solid #333' }}></div>
-    <span>{label}</span>
-  </div>
-);
 
 export default GraphViewer;
